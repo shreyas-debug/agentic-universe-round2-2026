@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Replace this with your controller. Contract: ./run.sh <SIM_URL> runs until the scenario finishes.
+# Linux runner: pip install -r requirements.txt, then ./run.sh <SIM_URL>.
 set -euo pipefail
 SIM_URL="${1:?usage: ./run.sh <SIM_URL>}"
-echo "No controller yet — running the naive example against $SIM_URL" >&2
-exec python examples/naive_controller.py --url "$SIM_URL"
+cd "$(dirname "$0")"
+exec "${PYTHON_BIN:-python3}" main.py "$SIM_URL"
