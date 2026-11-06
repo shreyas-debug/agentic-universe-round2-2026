@@ -74,7 +74,7 @@ class IngestionEngine:
             for line in lines:
                 ev = json.loads(line)
                 ev_id = ev.get("event_id", -1)
-                if ev_id <= self.last_processed_event_id and ev_id != -1:
+                if ev_id <= last_event_id and ev_id != -1:
                     continue
                 self._process_single_event(ev)
                 last_event_id = max(last_event_id, ev_id)

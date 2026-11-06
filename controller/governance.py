@@ -5,9 +5,8 @@ auto-apply policies, approval reconciliation, and supervisor edit handling.
 """
 from __future__ import annotations
 
-import copy
+import json
 import logging
-import math
 import uuid
 from typing import Any
 from .client import SimClient
@@ -18,6 +17,10 @@ logger = logging.getLogger(__name__)
 
 def total_variation_shift(old_cfg: dict[str, Any], new_cfg: dict[str, Any]) -> float:
     """Calculate maximum total-variation distance across cohorts for agent dimensions."""
+    def normalized(weights: dict[str, float]) -> dict[str, float]:
+        total = sum(weights.values())
+        return {key: value / total for key, value in weights.items()} if total > 0 else {}
+
     cohort_keys = {"default"}
     for c in old_cfg.get("cohorts", []):
         cohort_keys.add(c["id"])
@@ -33,6 +36,8 @@ def total_variation_shift(old_cfg: dict[str, Any], new_cfg: dict[str, Any]) -> f
             new_alloc = new_cfg.get("allocations", {}).get(cid, {}).get(dim)
             if not new_alloc:
                 new_alloc = new_cfg.get("allocations", {}).get("default", {}).get(dim, {})
+
+            old_alloc, new_alloc = normalized(old_alloc), normalized(new_alloc)
 
             all_keys = set(old_alloc.keys()) | set(new_alloc.keys())
             tv = 0.5 * sum(abs(old_alloc.get(k, 0.0) - new_alloc.get(k, 0.0)) for k in all_keys)
@@ -86,9 +91,9 @@ class GovernanceManager:
         # Check active approvals from simulator
         try:
             active = self.client.list_approvals()
-        except Exception as e:
-            logger.error("Failed to list approvals: %s", e)
-            return
+        except Exception:
+            logger.exception("Failed to list approvals; retaining simulator time for retry")
+            raise
 
         by_proposal = {item["proposal_id"]: item for item in active}
         for row in self.storage.get_pending_proposals():
@@ -97,9 +102,12 @@ class GovernanceManager:
                 remote = by_proposal.get(pid)
                 if remote:
                     self.storage.update_proposal_status(pid, remote["status"], approval_id=remote["approval_id"])
-                    self.pending_approvals[wid] = remote["approval_id"]
+                    if remote["status"] in ("pending", "approved"):
+                        self.pending_approvals[wid] = remote["approval_id"]
+                    else:
+                        self.pending_approvals.pop(wid, None)
                 elif row["request_body"]:
-                    body = __import__("json").loads(row["request_body"])
+                    body = json.loads(row["request_body"])
                     if self.client.get_config(wid)["version"] != row["base_version"]:
                         self.storage.update_proposal_status(pid, "stale", sim_minute)
                     else:
@@ -107,6 +115,21 @@ class GovernanceManager:
                         if code in (200, 201):
                             self.storage.update_proposal_status(pid, "pending", approval_id=response["approval_id"])
                             self.pending_approvals[wid] = response["approval_id"]
+                        elif code == 409 and response.get("error") == "duplicate_proposal_id":
+                            refreshed = next((item for item in self.client.list_approvals()
+                                              if item.get("proposal_id") == pid), None)
+                            if refreshed:
+                                self.storage.update_proposal_status(
+                                    pid, refreshed["status"], approval_id=refreshed["approval_id"])
+                                if refreshed["status"] in ("pending", "approved"):
+                                    self.pending_approvals[wid] = refreshed["approval_id"]
+                            else:
+                                raise RuntimeError(f"Duplicate proposal {pid} not visible for reconciliation")
+                        elif code >= 500:
+                            raise RuntimeError(f"Approval retry returned HTTP {code}")
+                        else:
+                            status = "stale" if code == 409 and response.get("error") == "stale_base_version" else "rejected"
+                            self.storage.update_proposal_status(pid, status, sim_minute, reasons=[str(response)])
             elif row["status"] == "auto_sending":
                 applied = next((entry for entry in self.client.get_config_history(wid)
                                 if entry.get("proposal_id") == pid), None)
@@ -116,12 +139,26 @@ class GovernanceManager:
                                            proposal_id=pid, rationale="Reconciled auto-apply after restart")
                     self.storage.update_proposal_status(pid, "auto_applied", applied_minute=sim_minute)
                 elif row["request_body"] and self.client.get_config(wid)["version"] == row["base_version"]:
-                    code, response = self.client.auto_apply(wid, __import__("json").loads(row["request_body"]))
+                    code, response = self.client.auto_apply(wid, json.loads(row["request_body"]))
                     if code in (200, 201):
                         self.storage.log_audit(ts, sim_minute, wid, "auto_applied", "controller_auto",
                                                from_version=row["base_version"], to_version=response.get("version"),
                                                proposal_id=pid, rationale="Retried durable auto-apply intent")
                         self.storage.update_proposal_status(pid, "auto_applied", applied_minute=sim_minute)
+                    elif code == 409:
+                        applied = next((entry for entry in self.client.get_config_history(wid)
+                                        if entry.get("proposal_id") == pid), None)
+                        if applied:
+                            self.storage.log_audit(ts, sim_minute, wid, "auto_applied", "controller_auto",
+                                                   from_version=row["base_version"], to_version=applied["version"],
+                                                   proposal_id=pid, rationale="Reconciled auto-apply after conflict")
+                            self.storage.update_proposal_status(pid, "auto_applied", applied_minute=sim_minute)
+                        else:
+                            self.storage.update_proposal_status(pid, "stale", sim_minute)
+                    elif code >= 500:
+                        raise RuntimeError(f"Auto-apply retry returned HTTP {code}")
+                    else:
+                        self.storage.update_proposal_status(pid, "auto_failed", reasons=[str(response)])
                 else:
                     self.storage.update_proposal_status(pid, "stale", sim_minute)
 
@@ -159,7 +196,7 @@ class GovernanceManager:
                         applied_minute=sim_minute,
                         approval_id=aid
                     )
-                elif status_code == 409:
+                elif status_code == 409 and resp.get("error") == "stale_base_version":
                     # Stale base version (e.g. supervisor edited in the meantime)
                     logger.warning("Apply failed with stale base version for %s: %s", wid, resp)
                     self.storage.update_proposal_status(
@@ -173,6 +210,8 @@ class GovernanceManager:
                     self.storage.update_proposal_status(pid, "lapsed", sim_minute, reasons=["apply_window_elapsed"], approval_id=aid)
                 else:
                     logger.warning("Apply deferred for %s: %s %s", aid, status_code, resp)
+                    if status_code >= 500:
+                        raise RuntimeError(f"Approval apply returned HTTP {status_code}")
                     continue
                 self.pending_approvals.pop(wid, None)
 
@@ -209,7 +248,9 @@ class GovernanceManager:
 
         # 1. Check approver working hours (give buffer before end of shift)
         start_h, end_h = appr_hours
-        latest_h = max(start_h + 1, end_h - 2)
+        if start_h >= end_h:
+            return False
+        latest_h = min(end_h, max(start_h + 1, end_h - 2))
         if not (start_h <= sim_hour < latest_h):
             return False
 
@@ -246,6 +287,8 @@ class GovernanceManager:
         cur_ver = current_config_meta["version"]
 
         if proposed_config == cur_cfg:
+            return False
+        if self.storage.get_pending_proposals(wid):
             return False
 
         changed_dims = get_changed_dimensions(cur_cfg, proposed_config)
@@ -296,6 +339,8 @@ class GovernanceManager:
                 self.storage.update_proposal_status(proposal_id, "auto_applied", applied_minute=sim_minute)
                 return True
             else:
+                if status_code >= 500:
+                    raise RuntimeError(f"Auto-apply result uncertain: HTTP {status_code}")
                 self.storage.update_proposal_status(proposal_id, "auto_failed", reasons=[str(resp)])
                 logger.warning("Auto-apply rejected for %s: %s %s", wid, status_code, resp)
                 # If auto-apply failed, fall through to proposal if permissible
@@ -358,6 +403,8 @@ class GovernanceManager:
             logger.info("Approval requested for %s: %s (aid: %s)", wid, proposal_id, aid)
             return True
         else:
+            if status_code >= 500:
+                raise RuntimeError(f"Approval submission result uncertain: HTTP {status_code}")
             self.storage.update_proposal_status(proposal_id, "rejected", reasons=[str(resp)])
             logger.error("Failed to request approval for %s: %s %s", wid, status_code, resp)
             return False

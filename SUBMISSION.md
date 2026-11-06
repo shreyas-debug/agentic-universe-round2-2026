@@ -102,7 +102,7 @@ The cursor and derived counters are written in one SQLite transaction after each
 
 **Winner test.** A deterministic two-proportion z-test compares the leading observed arm with the runner-up after at least 200 connected calls per arm. The promotion cutoff is z ≥ 3.3, deliberately stricter than an unadjusted 1.96 because multiple arms and daily looks are involved. This is a conservative heuristic, not a formal family-wise error guarantee. The guardrail's observed rate is checked separately. Allocation remains 80% winner and 20% exploration.
 
-**Decay/rollback.** A prior-winner peak is retained and a large observed drop can pivot to another arm, but cumulative counters obscure gradual decay and there is no reliable rollback to a safe control. The public reports show continuing exposure to W3. A production fix needs rolling, config-version-specific windows and a control allocation before automated rollback.
+**Decay/rollback.** A prior-winner peak is retained and a large observed drop is logged. It does not promote a runner-up using evidence from a different arm. Cumulative counters obscure gradual decay and there is no reliable rollback to a safe control. The public reports show continuing exposure to W3. A production fix needs rolling, config-version-specific windows and a control allocation before automated rollback.
 
 **Call time.** Cut; no schedule weights or per-person preferred hours are changed. **Caller ID.** A DID needs at least 150 recent dials and a pickup rate less than 55% of the best sufficiently sampled peer before rotation. This is a conservative population trigger, not proof of carrier spam status.
 
@@ -120,11 +120,11 @@ Requests are limited by the workflow's 24-hour policy; Kestrel is voluntarily ca
 
 A hallucination investigation needs at least 200 connected calls, at least 10 flagged calls and a 4% recent flag rate in a 300-call window. The detector reserves 12 credits before calling the LLM. At most two prompt candidates are tested at 400 synthetic conversations each. The candidate must exceed both 98.5% and the workflow's validation threshold. Following a supervisor prompt edit, a previously used production prompt is tested first. Validation supports safety only; the proposal says engagement impact is unknown.
 
-In public_02 the caller-ID incident starts at D2 10:00. The grader reports zero share on the flagged DID from D3. A supervisor prompt edit occurs at D3 11:30; the controller submits a validated rollback at D3 14:00 and applies the approved change at D3 15:00. The grader reports 210 simulated minutes to fix. A real rollback decision from post-apply engagement is not yet automated.
+In public_02 the caller-ID incident starts at D2 10:00. The grader reports zero share on the flagged DID from D3. A supervisor prompt edit occurs at D3 11:30; the controller submits a validated rollback at D3 14:00 and applies the approved change at D3 16:00. The grader reports 270 simulated minutes to fix. A real rollback decision from post-apply engagement is not yet automated.
 
 ## 8. Scale
 
-On public_03, 4,200,115 live events were ingested across 12 workflows and five simulated days. HTTP NDJSON ingestion averaged 77,273 events/s during ingestion; the whole control loop averaged 20,964 events/s and 40.1 wall seconds per simulated day. p95 tick duration was 3.96 seconds; observed peak controller working set was 44.7 MB. The hourly decision cadence gives up to 60 simulated minutes of event age before computation. The full method and caveats are in `reports/public_03.md`. At 10×, one-process HTTP JSON parsing and serial SQLite checkpointing become the first bottlenecks. Production partitioning would assign workflows to leased workers and store offsets plus aggregates transactionally. The simulator waits for the loop; a real dialler needs an independent backlog alert.
+On public_03, 4,200,114 live events were ingested across 12 workflows and five simulated days. HTTP NDJSON ingestion averaged 103,437 events/s during ingestion; the whole control loop averaged 29,759 events/s and 28.2 wall seconds per simulated day. p95 tick duration was 2.78 seconds; observed peak controller working set was 41.8 MB. The hourly decision cadence gives up to 60 simulated minutes of event age before computation. The full method and caveats are in `reports/public_03.md`. At 10×, one-process HTTP JSON parsing and serial SQLite checkpointing become the first bottlenecks. Production partitioning would assign workflows to leased workers and store offsets plus aggregates transactionally. The simulator waits for the loop; a real dialler needs an independent backlog alert.
 
 ## 9. Reliability
 
@@ -134,7 +134,23 @@ HTTP 4xx policy errors are recorded as failed proposals; stale approvals are nev
 
 ## 10. Audit & observability
 
-Example: `python main.py audit --workflow ks_cancel --at 5200 --db runs/final02_controller.db` queries the controller's own `audit_log` for the action, proposal ID, approval ID, rationale and config version. It shows the D3 11:30 supervisor edit, D3 14:00 prompt rollback proposal (`P2 → P1`, 15/300 QA flags, validation run `val_00001`), approval `apr_00006`, and D3 15:00 apply as version 5. The store also holds per-tick `loop_metrics`: events ingested, ingestion duration, total tick duration and remaining credits.
+Example: `python main.py audit --workflow ks_cancel --at 5200 --db runs/edge02_controller.db` queries the controller's own `audit_log` for the action, proposal ID, approval ID, rationale and config version. It shows the D3 11:30 supervisor edit, D3 14:00 prompt rollback proposal (`P2 → P1`, 15/288 QA flags, validation run `val_00001`), approval `apr_00004`, and D3 16:00 apply as version 5. The store also holds per-tick `loop_metrics`: events ingested, ingestion duration, total tick duration and remaining credits.
+
+Excerpt from that command (the local `runs/` directory is excluded from Git):
+
+```text
+[2027-01-07T11:30:00+05:30 | Sim Min 5040] Action: supervisor_edit_detected | Actor: supervisor
+  Version: unknown -> v4
+[2027-01-07T14:00:00+05:30 | Sim Min 5160] Action: proposal_submitted | Actor: controller_proposer
+  Version: v4 -> pending
+  Proposal ID: prop_47a2cf792f1945fcbf30d0fe7327585e | Approval ID: apr_00004
+  Diff: {"prompt_version": {"from": "P2", "to": "P1"}}
+  Rationale: 15/288 recent connected calls flagged; synthetic safety pass 0.985. Engagement impact unknown.
+  Evidence: {"validation_run_id": "val_00001"}
+[2027-01-07T16:00:00+05:30 | Sim Min 5280] Action: applied_via_approval | Actor: controller_approved
+  Version: unknown -> v5
+  Proposal ID: prop_47a2cf792f1945fcbf30d0fe7327585e | Approval ID: apr_00004
+```
 
 Page on an event backlog that grows for two ticks, a pending approved proposal near `apply_by`, an incident with fewer than 12 credits, or repeated controller crashes. Send a business-hours alert for one rejected proposal, ordinary experiment uncertainty or a single noisy QA flag.
 
@@ -144,16 +160,16 @@ The final public reports are `reports/public_01.md` and `reports/public_02.md`. 
 
 | Scenario | Workflow | Conclusion | Δ | Pickup | Δ | Engagement | Δ |
 |---|---|---:|---:|---:|---:|---:|---:|
-| public_01 | ks_cancel | 0.341 | +2.4% | 0.243 | +2.0% | 0.491 | +0.1% |
-| public_01 | nw_kyc | 0.359 | -1.1% | 0.238 | -1.7% | 0.588 | -0.5% |
-| public_01 | nw_renewal | 0.433 | +3.2% | 0.265 | +0.5% | 0.561 | +2.9% |
+| public_01 | ks_cancel | 0.343 | +2.9% | 0.244 | +2.4% | 0.492 | +0.2% |
+| public_01 | nw_kyc | 0.374 | +2.8% | 0.245 | +1.1% | 0.596 | +1.0% |
+| public_01 | nw_renewal | 0.423 | +0.7% | 0.260 | -1.2% | 0.557 | +2.1% |
 | **public_01** | **ALL** | **0.376** | **+2.0%** | **0.250** | **+0.8%** | **0.535** | **+1.0%** |
-| public_02 | ks_cancel | 0.370 | +49.4% | 0.246 | +33.8% | 0.512 | +7.6% |
-| public_02 | nw_kyc | 0.372 | -0.8% | 0.245 | +1.1% | 0.586 | -1.0% |
-| public_02 | nw_renewal | 0.419 | -1.8% | 0.260 | -0.5% | 0.542 | -1.0% |
-| **public_02** | **ALL** | **0.386** | **+15.7%** | **0.251** | **+12.9%** | **0.537** | **+1.4%** |
+| public_02 | ks_cancel | 0.362 | +46.2% | 0.247 | +34.4% | 0.499 | +4.8% |
+| public_02 | nw_kyc | 0.382 | +2.1% | 0.248 | +2.6% | 0.592 | -0.1% |
+| public_02 | nw_renewal | 0.429 | +0.5% | 0.266 | +1.7% | 0.542 | -1.1% |
+| **public_02** | **ALL** | **0.388** | **+16.2%** | **0.254** | **+14.4%** | **0.532** | **+0.4%** |
 
-Public_01 applied two changes: one beneficial and one neutral by the grader's hidden-truth classification. Public_02 applied six, all classified beneficial, with no harmful applied change. Two public_02 requests were rejected by approver judgement and were not applied. The Kestrel incident drives most of the aggregate improvement. Northwind renewal and KYC remain below their no-op baselines on some measured KPIs; those are real weaknesses even though their applied changes were classified beneficial at application time. The controller has no automatic decay rollback. The grader's hidden-truth labels are used only for this post-run analysis, never by the controller.
+Public_01 applied two changes: one beneficial and one neutral by the grader's hidden-truth classification. Public_02 applied four, all classified beneficial, with no harmful applied change. The Kestrel incident drives most of the aggregate improvement. Northwind renewal engagement and KYC engagement remain below their no-op baselines; those are real weaknesses even though the applied changes were classified beneficial at application time. The controller has no reliable automatic decay rollback. The grader's hidden-truth labels are used only for this post-run analysis, never by the controller.
 
 ## 12. Trade-offs & rejected alternatives
 

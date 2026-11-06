@@ -244,6 +244,9 @@ class OutcomeController:
             # 4. Check for hallucination incidents on each workflow
             for wid, wf_spec in self.wfs.items():
                 cur_cfg_meta = self.client.get_config(wid)
+                # Another workflow may have spent credits earlier this tick.
+                if self.incident_mgr.get_or_create_detector(wid).is_spiking():
+                    credits_remaining = self.client.get_state().get("credits_remaining", 0.0)
                 self.incident_mgr.check_and_remediate(
                     workflow_id=wid,
                     wf_spec=wf_spec,

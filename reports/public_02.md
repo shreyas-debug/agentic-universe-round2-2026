@@ -4,36 +4,31 @@
 
 | workflow | conclusion rate | Δ | pickup | Δ | engagement | Δ | engagement gap captured | hallucinated calls (base) |
 |---|---|---|---|---|---|---|---|---|
-| ks_cancel | 0.370 | +49.4% | 0.246 | +33.8% | 0.512 | +7.6% | 42% | 91 (330) |
-| nw_kyc | 0.372 | -0.8% | 0.245 | +1.1% | 0.586 | -1.0% | 0% | 33 (31) |
-| nw_renewal | 0.419 | -1.8% | 0.260 | -0.5% | 0.542 | -1.0% | -2% | 61 (55) |
-| ALL | 0.386 | +15.7% | 0.251 | +12.9% | 0.537 | +1.4% | 23% | 185 (416) |
+| ks_cancel | 0.362 | +46.2% | 0.247 | +34.4% | 0.499 | +4.8% | 41% | 87 (330) |
+| nw_kyc | 0.382 | +2.1% | 0.248 | +2.6% | 0.592 | -0.1% | 0% | 20 (31) |
+| nw_renewal | 0.429 | +0.5% | 0.266 | +1.7% | 0.542 | -1.1% | -12% | 56 (55) |
+| ALL | 0.388 | +16.2% | 0.254 | +14.4% | 0.532 | +0.4% | 21% | 163 (416) |
 
 ## Changes applied by the controller
 
-6 applied — beneficial: 6
+4 applied — beneficial: 4
 
-- ks_cancel v2 (controller_approved) dims=['cohorts', 'welcome_message', 'voice'] engageΔ=+0.023 didΔ=+0.000 → **beneficial**
 - nw_renewal v2 (controller_approved) dims=['cohorts', 'welcome_message', 'voice'] engageΔ=+0.040 didΔ=+0.000 → **beneficial**
-- ks_cancel v3 (controller_approved) dims=['caller_id'] engageΔ=+0.000 didΔ=+0.591 → **beneficial**
-- nw_renewal v3 (controller_approved) dims=['welcome_message'] engageΔ=+0.028 didΔ=+0.000 → **beneficial**
+- ks_cancel v2 (controller_approved) dims=['cohorts', 'welcome_message', 'voice'] engageΔ=+0.023 didΔ=+0.000 → **beneficial**
+- ks_cancel v3 (controller_approved) dims=['caller_id'] engageΔ=+0.000 didΔ=+0.596 → **beneficial**
 - ks_cancel v5 (controller_approved) dims=['prompt_version'] engageΔ=+0.102 didΔ=+0.000 → **beneficial**
-- nw_renewal v4 (controller_approved) dims=['welcome_message'] engageΔ=+0.025 didΔ=+0.000 → **beneficial**
 
 ## Governance
 
 ```
 {
-  "approval_requests": 8,
+  "approval_requests": 4,
   "decisions": {
-    "rejected": 2,
-    "approved": 6,
+    "approved": 4,
     "expired": 0
   },
-  "rejection_reasons": {
-    "approver declined (judgement call)": 2
-  },
-  "applied_via_approval": 6,
+  "rejection_reasons": {},
+  "applied_via_approval": 4,
   "auto_applied": 0,
   "auto_apply_rejected": 0,
   "apply_conflicts": 0,
@@ -54,7 +49,7 @@
     "workflow": "ks_cancel",
     "at": "D2 10:00",
     "flagged_did_share_by_day": {
-      "2": 0.168,
+      "2": 0.209,
       "3": 0.0,
       "4": 0.0,
       "5": 0.0,
@@ -68,7 +63,7 @@
     "type": "supervisor_edit",
     "workflow": "ks_cancel",
     "at": "D3 11:30",
-    "mttr_minutes": 210,
+    "mttr_minutes": 270,
     "fixed_by": "controller_approved"
   },
   {
@@ -84,13 +79,14 @@
 ```
 {
   "nw_renewal:welcome_message=W3": {
-    "3": 0.509,
-    "4": 0.501,
-    "5": 0.318,
-    "6": 0.256,
-    "7": 0.24,
-    "8": 0.248,
-    "9": 0.254
+    "2": 0.318,
+    "3": 0.336,
+    "4": 0.33,
+    "5": 0.341,
+    "6": 0.333,
+    "7": 0.329,
+    "8": 0.331,
+    "9": 0.329
   }
 }
 ```

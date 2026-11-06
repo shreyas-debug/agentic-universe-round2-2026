@@ -46,6 +46,9 @@ class Storage:
             CREATE INDEX IF NOT EXISTS idx_audit_wf_ts ON audit_log (workflow_id, sim_minute);
             CREATE UNIQUE INDEX IF NOT EXISTS idx_audit_proposal_action
                 ON audit_log (proposal_id, action) WHERE proposal_id IS NOT NULL;
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_audit_supervisor_version
+                ON audit_log (workflow_id, to_version, action)
+                WHERE action = 'supervisor_edit_detected';
 
             CREATE TABLE IF NOT EXISTS proposals (
                 proposal_id TEXT PRIMARY KEY,

@@ -147,12 +147,12 @@ class ExperimentManager:
                             prev_curr_rate = rates[prev_winner][0]
                             if (historical_peak - prev_curr_rate) > 0.06:
                                 logger.info(
-                                    "Workflow %s, cohort %s, %s: Winner %s decayed from %.3f to %.3f -> pivoting",
+                                    "Workflow %s, cohort %s, %s: Winner %s declined from %.3f to %.3f; fresh comparison required",
                                     self.workflow_id, cid, dim, prev_winner, historical_peak, prev_curr_rate
                                 )
-                                # Pivot to best alternative
-                                if best_opt == prev_winner and len(sorted_opts) > 1:
-                                    best_opt = sorted_opts[1][0]
+                                # Do not promote another arm using the z-score
+                                # calculated for this winner. A fresh comparison
+                                # is required at the next decision window.
 
                     # Conservative fixed threshold for repeated looks and
                     # several arms; no LLM participates in winner selection.

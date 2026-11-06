@@ -3,9 +3,9 @@
   "restart_state_minute": 720,
   "finished_at_minute": 11520,
   "finished": true,
-  "approvals": 2,
+  "approvals": 3,
   "unresolved_approvals": 0,
   "applied_proposal_ids_unique": true,
-  "last_event_id": 297028,
-  "committed_event_id": 297028
+  "last_event_id": 297030,
+  "committed_event_id": 297030
 }
