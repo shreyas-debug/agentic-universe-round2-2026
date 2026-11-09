@@ -1,6 +1,6 @@
 # Outcome-First Agent Loop — Submission
 
-**Name:** Shreyas Satpute · **Date:** 6 November 2026 · **Hours actually spent:** Not reliably recorded across the pre-existing local work and this completion pass · **Language / storage:** Python 3.13 / SQLite
+**Name:** Shreyas Satpute · **Date:** 9 November 2026 · **Hours actually spent:** Not reliably recorded across the pre-existing local work and this completion pass · **Language / storage:** Python 3.13 / SQLite
 
 ## 0. TL;DR
 
@@ -100,7 +100,7 @@ The cursor and derived counters are written in one SQLite transaction after each
 
 **Experiment design.** When engagement is primary, untried welcome and voice options receive uniform traffic. The simulator randomizes these dimensions independently, so this is a marginal estimate, not an interaction estimate. A pickup-primary workflow does not test these post-pickup dimensions. No arm is credited until actual call events arrive.
 
-**Winner test.** A deterministic two-proportion z-test compares the leading observed arm with the runner-up after at least 200 connected calls per arm. The promotion cutoff is z ≥ 3.3, deliberately stricter than an unadjusted 1.96 because multiple arms and daily looks are involved. This is a conservative heuristic, not a formal family-wise error guarantee. The guardrail's observed rate is checked separately. Allocation remains 80% winner and 20% exploration.
+**Winner test.** A deterministic two-proportion z-test compares the leading observed arm with the runner-up after at least 200 connected calls per arm. The promotion cutoff is z ≥ 3.3, deliberately stricter than an unadjusted 1.96 because multiple arms and daily looks are involved. A single, prespecified one-sided comparison at that cutoff has a nominal false-positive probability of about 0.05%; selecting the leading arm and looking repeatedly invalidates that figure as a controller-wide false-winner rate. The actual rate is unmeasured. The guardrail's observed rate is checked separately. Allocation remains 80% winner and 20% exploration.
 
 **Decay/rollback.** A prior-winner peak is retained and a large observed drop is logged. It does not promote a runner-up using evidence from a different arm. Cumulative counters obscure gradual decay and there is no reliable rollback to a safe control. The public reports show continuing exposure to W3. A production fix needs rolling, config-version-specific windows and a control allocation before automated rollback.
 
@@ -118,7 +118,7 @@ Requests are limited by the workflow's 24-hour policy; Kestrel is voluntarily ca
 
 ## 7. Incidents
 
-A hallucination investigation needs at least 200 connected calls, at least 10 flagged calls and a 4% recent flag rate in a 300-call window. The detector reserves 12 credits before calling the LLM. At most two prompt candidates are tested at 400 synthetic conversations each. The candidate must exceed both 98.5% and the workflow's validation threshold. Following a supervisor prompt edit, a previously used production prompt is tested first. Validation supports safety only; the proposal says engagement impact is unknown.
+A hallucination investigation needs at least 200 connected calls, at least 10 flagged calls and a 4% recent flag rate in a 300-call window. The public_01 run produced no incident proposal, but that is too little evidence to estimate a false-positive rate; the threshold needs calibration against labeled quiet periods before production use. The detector reserves 12 credits before calling the LLM. At most two prompt candidates are tested at 400 synthetic conversations each. The candidate must exceed both 98.5% and the workflow's validation threshold. Following a supervisor prompt edit, a previously used production prompt is tested first. Validation supports safety only; the proposal says engagement impact is unknown.
 
 In public_02 the caller-ID incident starts at D2 10:00. The grader reports zero share on the flagged DID from D3. A supervisor prompt edit occurs at D3 11:30; the controller submits a validated rollback at D3 14:00 and applies the approved change at D3 16:00. The grader reports 270 simulated minutes to fix. A real rollback decision from post-apply engagement is not yet automated.
 
